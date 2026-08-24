@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCTRE - Spatial Cyber Threat Reconstruction Engine</title>
+    
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#38bdf8",
+                        error: "#ffb4ab",
+                        "surface-container": "#171f33",
+                        "surface-container-low": "#131b2e",
+                        "surface-container-lowest": "#060e20",
+                        "outline-variant": "#3e484f",
+                        "surface-variant": "#2d3449",
+                        background: "#0b1326",
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid #334155;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2d3449; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3e484f; }
+        
+        #cy { width: 100%; height: 100%; }
+        #timeline-canvas { width: 100%; height: 100%; display: block; }
+        .hidden { display: none !important; }
+        
+        /* Needed for old js appending to these containers */
+        #log-table-container table { width: 100%; text-align: left; }
+        #log-table-container th { position: sticky; top: 0; background: #0a0a0a; padding: 4px; font-size: 11px; color: #87929a; }
+        #log-table-container td { padding: 4px; border-bottom: 1px solid #333; }
+        .log-row.suspicious { color: #ffb4ab; background: rgba(255,180,171,0.1); }
+    </style>
+</head>
+<body class="bg-background text-gray-200 h-screen overflow-hidden flex flex-col font-sans selection:bg-primary selection:text-black">
+
+<!-- NavBar -->
+<nav id="toolbar" class="bg-surface-container border-b border-outline-variant flex justify-between items-center w-full px-4 h-16 shrink-0 z-50 relative">
+    <div class="flex items-center gap-4">
+        <span class="font-bold tracking-tighter text-primary text-sm uppercase">SCTRE - SPATIAL CYBER THREAT</span>
+        
+        <div id="threat-indicator" class="ml-8 flex items-center gap-2 glass-panel rounded-full px-3 py-1">
+            <span class="text-xs text-gray-400 font-bold uppercase">THREAT LEVEL</span>
+            <div id="threat-bar" class="w-32 h-3 bg-gray-800 rounded overflow-hidden">
+                <div id="threat-fill" class="h-full w-0 bg-green-500 transition-all duration-500"></div>
+            </div>
+            <span id="threat-score" class="font-mono text-sm text-primary">0%</span>
+        </div>
+    </div>
+    
+    <div class="toolbar-actions flex items-center gap-4">
+        <button id="btn-simulate" class="toolbar-btn bg-primary/20 text-primary border border-primary/50 hover:bg-primary/30 transition-colors px-4 py-1.5 rounded text-xs font-bold uppercase flex items-center gap-2">
+            <i class="fa-solid fa-play"></i> Start Simulation
+        </button>
+        <button id="btn-freeze" class="toolbar-btn bg-surface-variant hover:bg-gray-700 transition-colors px-4 py-1.5 rounded text-xs font-bold uppercase text-white">
+            <i class="fa-solid fa-snowflake"></i> Freeze System
+        </button>
+        <button id="btn-attack" class="toolbar-btn bg-error/20 text-error border border-error/50 hover:bg-error/30 transition-colors px-4 py-1.5 rounded text-xs font-bold uppercase flex items-center gap-2 shadow-[0_0_10px_rgba(255,180,171,0.2)]">
+            <i class="fa-solid fa-skull"></i> Trigger Attack
+        </button>
+        <div class="h-6 w-px bg-outline-variant mx-2"></div>
+        <button id="btn-notifications" class="toolbar-btn relative text-gray-400 hover:text-white transition-colors p-1.5 rounded-full flex items-center justify-center">
+            <i class="fa-solid fa-bell text-lg"></i>
+            <span id="notification-badge" class="absolute top-0 right-0 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center hidden">0</span>
+        </button>
+    </div>
+</nav>
+
+<main id="content" class="flex-1 flex overflow-hidden relative bg-surface-container-lowest">
+
+    <!-- Central Graph -->
+    <div id="graph-container" class="flex-1 relative overflow-hidden flex flex-col p-4">
+        <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: radial-gradient(circle at center, #171f33 1px, transparent 1px); background-size: 24px 24px;"></div>
+        
+        <div class="relative flex-1 rounded-lg border border-outline-variant/30 overflow-hidden glass-panel flex flex-col">
+            <div class="px-4 py-2 flex justify-between items-center border-b border-outline-variant/30 bg-surface-container/50">
+                <h3 class="text-primary text-xs font-bold tracking-widest flex items-center gap-2 uppercase">
+                    <i class="fa-solid fa-network-wired"></i> GLOBAL TOPOLOGY MAP
+                </h3>
+            </div>
+            <div class="flex-1 relative w-full h-full">
+                <div id="cy"></div>
+            </div>
+        </div>
+
+        <!-- Pop-over Device Panel (hidden by default) -->
+        <div id="device-panel" class="panel hidden absolute top-[40%] right-[10%] z-50 glass-panel rounded-lg p-4 border border-primary/50 shadow-2xl w-[280px] flex flex-col transform">
+            <div class="panel-header flex items-start justify-between mb-3 border-b border-primary/20 pb-2 select-none">
+                <div>
+                    <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-server"></i>
+                        <span id="device-panel-title">Device Name</span>
+                    </h4>
+                </div>
+                <button id="device-panel-close" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="device-panel-content" class="space-y-1.5 mb-4 text-xs font-mono">
+                <!-- Injected via JS -->
+            </div>
+            <div class="device-admin-controls flex gap-2 mt-auto">
+                <button id="btn-disable-device" class="flex-1 bg-surface-variant text-white hover:bg-gray-600 border border-outline-variant py-1 rounded text-xs font-bold uppercase transition-colors">Disable</button>
+                <button id="btn-isolate-device" class="flex-1 bg-error/20 text-error border border-error/50 hover:bg-error/30 py-1 rounded text-xs font-bold uppercase transition-colors">Isolate</button>
+            </div>
+        </div>
+        
+        <!-- User Detail Panel (hidden by default) -->
+        <div id="user-detail" class="hidden absolute top-[20%] right-[10%] z-50 glass-panel rounded-lg p-4 border border-primary/50 shadow-2xl w-[320px] flex flex-col transform">
+            <div class="panel-header flex justify-between items-start mb-2 border-b border-outline-variant pb-2 select-none">
+                <h4 id="user-detail-name" class="text-primary font-bold text-sm">User Name</h4>
+                <button id="user-detail-close" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <h5 class="text-xs text-gray-400 uppercase font-bold mb-2">Device Access Tree</h5>
+            <div id="user-detail-tree" class="text-xs font-mono max-h-[150px] overflow-y-auto space-y-1 mb-3"></div>
+            <div id="user-admin-controls" class="flex flex-wrap gap-2">
+                <button class="toolbar-btn bg-error/20 text-error border border-error/50 hover:bg-error/30 py-1 px-2 rounded text-xs font-bold">Block User</button>
+                <button class="toolbar-btn bg-yellow-500/20 text-yellow-500 border border-yellow-500/50 hover:bg-yellow-500/30 py-1 px-2 rounded text-xs font-bold">Revoke Access</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vertical Resizer -->
+    <div id="vertical-resizer" class="w-1 cursor-col-resize bg-outline-variant hover:bg-primary transition-colors z-40"></div>
+
+    <!-- Right Sidebar -->
+    <aside id="sidebar" class="w-[320px] border-l border-outline-variant bg-surface-container-low flex flex-col shrink-0 z-30">
+        
+        <!-- Active Users Panel -->
+        <div id="user-panel" class="h-1/2 border-b border-outline-variant flex flex-col p-4">
+            <h3 class="text-xs text-gray-400 font-bold uppercase mb-3 flex items-center justify-between">
+                ACTIVE ENTITIES
+            </h3>
+            <div id="user-list" class="flex-1 overflow-y-auto space-y-2 pr-2">
+                <!-- Users injected here -->
+            </div>
+        </div>
+
+        <!-- Logs Panel -->
+        <div id="log-panel" class="h-1/2 flex flex-col p-4 bg-[#0a0a0a]">
+            <h3 class="text-xs text-gray-400 font-bold uppercase mb-2">DEVICE ACCESS LOGS</h3>
+            <div class="log-filter-row flex gap-2 mb-2">
+                <select id="log-filter-user" class="w-full bg-[#111] border border-[#333] rounded text-xs font-mono py-1 px-2 focus:border-primary outline-none text-gray-400">
+                    <option value="">All Users</option>
+                </select>
+                <select id="log-filter-floor" class="w-full bg-[#111] border border-[#333] rounded text-xs font-mono py-1 px-2 focus:border-primary outline-none text-gray-400">
+                    <option value="">All Floors</option>
+                </select>
+            </div>
+            <div id="log-table-container" class="flex-1 overflow-y-auto font-mono text-[10px] leading-tight">
+                <table>
+                    <thead>
+                        <tr><th>Time</th><th>Device</th><th>User</th><th>Action</th><th>Status</th></tr>
+                    </thead>
+                    <tbody id="log-table-body">
+                        <!-- Logs injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </aside>
+
+</main>
+
+<!-- Horizontal Resizer -->
+<div id="horizontal-resizer" class="h-1 cursor-row-resize bg-outline-variant hover:bg-primary transition-colors z-40"></div>
+<div id="timeline-container" class="h-[100px] border-t border-outline-variant bg-surface-container-low p-2 shrink-0 flex flex-col">
+    <div class="flex justify-between items-end mb-1 px-4">
+        <h3 class="text-xs text-gray-400 font-bold uppercase">TEMPORAL RECONSTRUCTION</h3>
+    </div>
+    <div class="flex-1 w-full glass-panel rounded border border-outline-variant/50">
+        <canvas id="timeline-canvas"></canvas>
+    </div>
+</div>
+
+<!-- Dropdowns & Overlays -->
+<div id="notification-dropdown" class="hidden fixed top-16 right-4 w-[350px] max-h-[400px] bg-surface-container-high border border-outline-variant shadow-2xl z-[100] rounded-b-lg overflow-hidden flex flex-col">
+    <div class="notification-header p-3 border-b border-outline-variant flex justify-between items-center">
+        <h4 class="text-sm font-bold">Notifications</h4>
+        <button id="btn-clear-notifications" class="toolbar-btn text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">Clear All</button>
+    </div>
+    <div id="notification-list" class="overflow-y-auto max-h-[300px]">
+        <!-- Notifications injected here -->
+    </div>
+</div>
+
+<div id="toast-container" class="fixed top-20 right-5 z-[1000] flex flex-col gap-2">
+    <!-- Toasts injected here -->
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+<script src="js/building.js"></script>
+<script src="js/users.js"></script>
+<script src="js/logs.js"></script>
+<script src="js/notifications.js"></script>
+<script src="js/graph.js"></script>
+<script src="js/simulation.js"></script>
+<script src="js/correlation.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
